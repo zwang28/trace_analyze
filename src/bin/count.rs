@@ -32,6 +32,8 @@ struct Args {
     locality_over_time: bool,
     #[arg(long, default_value_t = 600)]
     locality_over_time_bin_sec: u64,
+    #[arg(long, default_value_t = false)]
+    key_time_span: bool,
     #[arg(long, default_value_t = 2048)]
     output_width: u32,
     #[arg(long, default_value_t = 1536)]
@@ -238,6 +240,59 @@ fn key_access_count(args: &Args, hist_vec: &HistogramVec, metadata: &Metadata) {
     root.present().unwrap();
 }
 
+fn key_time_span(args: &Args, hist_vec: &HistogramVec, metadata: &Metadata) {
+    let mut span: BTreeMap<KeyBucketId, (u64, u64)> = BTreeMap::new();
+    for (ts, v) in hist_vec {
+        for k in v {
+            let e = span.entry(*k).or_insert((*ts, *ts));
+            e.1 = *ts;
+        }
+    }
+
+    let mut distribution: BTreeMap<u64, u64> = BTreeMap::new();
+    for (_, v) in &span {
+        let s = v.1 - v.0;
+        let e = distribution.entry(s).or_default();
+        *e += 1;
+    }
+    // println!("{distribution:?}");
+
+    let path = format!("{}/key_time_span_distribution.png", args.output_dir);
+    let root =
+        BitMapBackend::new(&path, (args.output_width, args.output_height)).into_drawing_area();
+    root.fill(&WHITE).unwrap();
+    let mut chart = ChartBuilder::on(&root)
+        .set_label_area_size(LabelAreaPosition::Left, 60)
+        .set_label_area_size(LabelAreaPosition::Bottom, 60)
+        .caption("key_time_span_distribution", ("sans-serif", 40))
+        .build_cartesian_2d(
+            0..distribution.keys().max().copied().unwrap() + 1,
+            0..distribution.values().max().copied().unwrap() + 1,
+        )
+        .unwrap();
+    chart
+        .configure_mesh()
+        .disable_x_mesh()
+        .disable_y_mesh()
+        .x_desc(format!(
+            "key time span. {}-{};{}-{}",
+            metadata.ts_bucket_size_sec,
+            metadata.ts_bucket_num,
+            metadata.key_bucket_size,
+            metadata.key_bucket_num
+        ))
+        .y_desc("count")
+        .draw()
+        .unwrap();
+    // chart
+    //     .draw_series(AreaSeries::new(distribution, 0, &RED.mix(0.2)).border_style(&RED))
+    //     .unwrap();
+    chart.draw_series(distribution.iter().map(|(x,y)|{
+        Circle::new((*x, *y), 2, GREEN.filled())
+    })).unwrap();
+    root.present().unwrap();
+}
+
 fn key_reuse_period(args: &Args, hist_vec: &HistogramVec, metadata: &Metadata) {
     let max_diff = (hist_vec.keys().last().copied().unwrap()
         - hist_vec.keys().next().copied().unwrap())
@@ -286,7 +341,7 @@ fn key_reuse_period(args: &Args, hist_vec: &HistogramVec, metadata: &Metadata) {
     let mut chart = ChartBuilder::on(&root)
         .set_label_area_size(LabelAreaPosition::Left, 60)
         .set_label_area_size(LabelAreaPosition::Bottom, 60)
-        .caption("key_appearance_cdf", ("sans-serif", 40))
+        .caption("key_reuse_period", ("sans-serif", 40))
         .build_cartesian_2d(
             (0..buckets_sec[buckets_sec.len() - 1] as i32)
                 .log_scale()
@@ -349,7 +404,7 @@ fn locality_over_time(args: &Args, hist_vec: &HistogramVec, metadata: &Metadata)
     let mut chart = ChartBuilder::on(&root)
         .set_label_area_size(LabelAreaPosition::Left, 60)
         .set_label_area_size(LabelAreaPosition::Bottom, 60)
-        .caption("key_appearance_cdf", ("sans-serif", 40))
+        .caption("key_uniqueness_over_time", ("sans-serif", 40))
         .build_cartesian_2d(0..metadata.ts_bucket_num as i32, 0.0..1.0)
         .unwrap();
     chart
@@ -484,5 +539,8 @@ fn main() {
     }
     if args.locality_over_time {
         locality_over_time(&args, &histogram_vec, &metadata);
+    }
+    if args.key_time_span {
+        key_time_span(&args, &histogram_vec, &metadata);
     }
 }

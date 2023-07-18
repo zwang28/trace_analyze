@@ -284,12 +284,12 @@ fn key_time_span(args: &Args, hist_vec: &HistogramVec, metadata: &Metadata) {
         .y_desc("count")
         .draw()
         .unwrap();
-    // chart
-    //     .draw_series(AreaSeries::new(distribution, 0, &RED.mix(0.2)).border_style(&RED))
-    //     .unwrap();
-    chart.draw_series(distribution.iter().map(|(x,y)|{
-        Circle::new((*x, *y), 2, GREEN.filled())
-    })).unwrap();
+    chart
+        .draw_series(AreaSeries::new(distribution, 0, &RED.mix(0.2)).border_style(&RED))
+        .unwrap();
+    // chart.draw_series(distribution.iter().map(|(x,y)|{
+    //     Circle::new((*x, *y), 2, GREEN.filled())
+    // })).unwrap();
     root.present().unwrap();
 }
 
